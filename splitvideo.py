@@ -1,114 +1,48 @@
-#!/usr/bin/env python
-import os
-import re
-import pprint
-import sys
-import subprocess as sp
-from os.path import basename
-from subprocess import *
-from optparse import OptionParser
+import json
+from pathlib import Path
+from subprocess import check_output, run
 
-def parseChapters(filename):
-  chapters = []
-  command = [ "ffmpeg", '-i', filename]
-  output = ""
-  m = None
-  title = None
-  chapter_match = None
-  try:
-    # ffmpeg requires an output file and so it errors
-    # when it does not get one so we need to capture stderr,
-    # not stdout.
-    output = sp.check_output(command, stderr=sp.STDOUT, universal_newlines=True)
-  except CalledProcessError as e:
-    output = e.output
 
-  num = 1
+def get_chapter(f):
+    cmd = ['ffprobe', '-i', f, '-print_format', 'json', '-show_chapters', '-loglevel', 'error']
+    output = check_output(cmd, encoding='utf8')
+    chapters = json.loads(output)
+    return chapters['chapters']
 
-  for line in iter(output.splitlines()):
-    x = re.match(r".*title.*: (.*)", line)
-    print("x:")
-    pprint.pprint(x)
 
-    print("title:")
-    pprint.pprint(title)
+def split_file(f, encode=False, simulate=True):
+    f = Path(f)
+    output_dir = f.parent / f.stem
+    output_dir.mkdir(exist_ok=True)
 
-    if x == None:
-      m1 = re.match(r".*Chapter #(\d+:\d+): start (\d+\.\d+), end (\d+\.\d+).*", line)
-      title = None
-    else:
-      title = x.group(1)
+    chapters = get_chapter(f)
+    for idx, chap in enumerate(chapters, 1):
+        idx_str = f"{idx:0{len(str(len(chapters)))}}" # padding it with enough zeroes
+        start = chap['start_time']
+        end = chap['end_time']
+        title = chap['tags']['title']
+        output_f = output_dir / f'{idx_str}. {title}{f.suffix}'
 
-    if m1 != None:
-      chapter_match = m1
+        print(f'Chapter {idx_str}, title is {title}, from {start} to {end}, output file: {output_f}')
 
-    print("chapter_match:")
-    pprint.pprint(chapter_match)
+        if simulate:
+            continue
 
-    if title != None and chapter_match != None:
-      m = chapter_match
-      pprint.pprint(title)
-    else:
-      m = None
+        command = ["ffmpeg", '-loglevel', 'error', '-stats', '-i', f, '-ss', start, '-to', end, '-map_chapters', '-1']
+        if encode:
+            command.extend(['-c:v', 'libx264', '-preset', 'slow', '-crf', '21', '-c:a', 'flac'])
+        else:
+            command.extend(['-c', 'copy'])
+        command.append(output_f)
+        run(command)
 
-    if m != None:
-      chapters.append({ "name": str(num) + " - " + title, "start": m.group(2), "end": m.group(3)})
-      num += 1
-
-  return chapters
-
-def getChapters():
-  parser = OptionParser(usage="usage: %prog [options] filename", version="%prog 1.0")
-  parser.add_option("-f", "--file",dest="infile", help="Input File", metavar="FILE")
-  parser.add_option("-e", "--encode", help="Frame accurate splitting by reencoding", action="store_true", dest="encode")
-  (options, args) = parser.parse_args()
-  print(options)
-  if not options.infile:
-    parser.error('Filename required')
-  chapters = parseChapters(options.infile)
-  fbase, fext = os.path.splitext(options.infile)
-  path, file = os.path.split(options.infile)
-  newdir, fext = os.path.splitext( basename(options.infile) )
-
-  os.mkdir(path + "/" + newdir)
-
-  for chap in chapters:
-    chap['name'] = chap['name'].replace('/',':')
-    chap['name'] = chap['name'].replace("'","\'")
-    print("start:" +  chap['start'])
-    chap['outfile'] = path + "/" + newdir + "/" + re.sub("[^-a-zA-Z0-9_.():' ]+", '', chap['name']) + fext
-    chap['origfile'] = options.infile
-    print(chap['outfile'])
-  return chapters, options.encode
-
-def convertChapters(chapters, encode):
-  for chap in chapters:
-    print("start:" +  chap['start'])
-    print(chap)
-    if encode:
-        command = [
-            "ffmpeg", '-i', chap['origfile'],
-            '-ss', chap['start'],
-            '-to', chap['end'],
-            '-c:v', 'libx264',
-            chap['outfile']]
-    else:
-        command = [
-        "ffmpeg", '-i', chap['origfile'],
-        '-vcodec', 'copy',
-        '-acodec', 'copy',
-        '-ss', chap['start'],
-        '-to', chap['end'],
-        chap['outfile']]
-    output = ""
-    try:
-      # ffmpeg requires an output file and so it errors
-      # when it does not get one
-      output = sp.check_output(command, stderr=sp.STDOUT, universal_newlines=True)
-    except CalledProcessError as e:
-      output = e.output
-      raise RuntimeError("command '{}' return with error (code {}): {}".format(e.cmd, e.returncode, e.output))
 
 if __name__ == '__main__':
-  chapters, encode = getChapters()
-  convertChapters(chapters, encode)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", help="input file")
+    parser.add_argument("--encode", '-e', action='store_true', help='re-encode isntead of just copy')
+    parser.add_argument("--simulate", '-s', action='store_true', help='simulate')
+
+    args = parser.parse_args()
+    split_file(args.input, encode=args.encode, simulate=args.simulate)
