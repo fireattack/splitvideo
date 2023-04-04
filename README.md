@@ -1,13 +1,18 @@
-# ffmpeg_split
+# splitvideo
 
-Split an ffmpeg file by chapter
+Split an ffmpeg file by chapter. Forked from https://github.com/harryjackson/ffmpeg_split (well, basically rewrite the whole thing.)
 
 ## Usage
 ```
-# without reencoding
-python split_ffmpeg.py -f filename
-# with reencoding
-python split_ffmpeg.py -e -f filename
+usage: splitvideo.py [-h] [--encode] [--simulate] input
+
+positional arguments:
+  input           input file
+
+options:
+  -h, --help      show this help message and exit
+  --encode, -e    re-encode isntead of just copy
+  --simulate, -s  simulate
 ```
 
 # Stackoverflow Question where this originated
