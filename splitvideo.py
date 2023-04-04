@@ -25,10 +25,13 @@ def split_file(f, encode=False, simulate=True):
 
         print(f'Chapter {idx_str}, title is {title}, from {start} to {end}, output file: {output_f}')
 
+        if output_f.exists():
+            print('File already exists. Skip.')
+            continue
         if simulate:
             continue
 
-        command = ["ffmpeg", '-loglevel', 'error', '-stats', '-i', f, '-ss', start, '-to', end, '-map_chapters', '-1']
+        command = ["ffmpeg", '-loglevel', 'error', '-stats', '-ss', start, '-to', end, '-i', f, '-map_chapters', '-1']
         if encode:
             command.extend(['-c:v', 'libx264', '-preset', 'slow', '-crf', '21', '-c:a', 'flac'])
         else:
